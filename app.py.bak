@@ -1,0 +1,203 @@
+import pandas as pd
+import numpy as np
+from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
+import logging
+from tensorflow.keras.models import load_model
+import joblib
+from datetime import timedelta
+import nltk
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Download NLTK data
+nltk.download('punkt')
+nltk.download('stopwords')
+stop_words = set(stopwords.words('english'))
+
+app = Flask(__name__)
+CORS(app)
+
+def load_data():
+    try:
+        gen_data = pd.read_csv('data/Plant_1_Generation_Data.csv')
+        weather_data = pd.read_csv('data/Plant_1_Weather_Sensor_Data.csv')
+        gen_data['DATE_TIME'] = pd.to_datetime(gen_data['DATE_TIME'], format='%d-%m-%Y %H:%M')
+        weather_data['DATE_TIME'] = pd.to_datetime(weather_data['DATE_TIME'], format='%Y-%m-%d %H:%M:%S')
+        
+        # Filter daytime data (6 AM to 6 PM)
+        gen_data = gen_data[gen_data['DATE_TIME'].dt.hour.between(6, 18)]
+        weather_data = weather_data[weather_data['DATE_TIME'].dt.hour.between(6, 18)]
+        
+        merged_df = pd.merge_asof(
+            gen_data.sort_values('DATE_TIME'),
+            weather_data.sort_values('DATE_TIME'),
+            on='DATE_TIME',
+            by='PLANT_ID',
+            direction='nearest'
+        )
+        model = load_model('assets/solar_forecasting_model.h5')
+        scaler = joblib.load('assets/scaler.save')
+        target_scaler = joblib.load('assets/target_scaler.save')
+        return model, scaler, target_scaler, merged_df
+    except Exception as e:
+        logging.error("Error loading data: %s", str(e), exc_info=True)
+        return None, None, None, None
+
+def prepare_sequence(data, scaler):
+    features = ['DC_POWER', 'AC_POWER', 'AMBIENT_TEMPERATURE', 'MODULE_TEMPERATURE', 'IRRADIATION']
+    data = data[features].values
+    scaled_data = scaler.transform(data)
+    return scaled_data.reshape(1, scaled_data.shape[0], scaled_data.shape[1])
+
+def predict_next_24_hours(data, model, scaler, target_scaler):
+    latest_data = data.tail(24)
+    latest_seq = prepare_sequence(latest_data, scaler)
+    predictions = []
+    current_seq = latest_seq.copy()
+    
+    for i in range(24):
+        pred_scaled = model.predict(current_seq, verbose=0)
+        pred = target_scaler.inverse_transform(pred_scaled)[0][0]
+        last_timestamp = pd.to_datetime(latest_data['DATE_TIME'].iloc[-1])
+        next_timestamp = last_timestamp + timedelta(minutes=15 * (i + 1))
+        actual = float(latest_data['AC_POWER'].iloc[-1]) if i == 0 else 0
+        
+        predictions.append({
+            'date_time': next_timestamp.strftime('%Y-%m-%dT%H:%M:%S'),
+            'predicted': float(pred),
+            'actual': float(actual)
+        })
+        
+        next_row = current_seq[0][-1].copy()
+        next_row[1] = pred_scaled[0][0]
+        current_seq = np.roll(current_seq, -1, axis=1)
+        current_seq[0][-1] = next_row
+    
+    return predictions
+
+@app.route('/')
+@app.route('/<path:path>')
+def serve_static(path='index.html'):
+    return send_from_directory('static', path)
+
+@app.route('/api/historical')
+def historical():
+    try:
+        power_type = request.args.get('power_type', 'AC_POWER')
+        inverter = request.args.get('inverter', 'all')
+        logging.info(f"Received historical request: power_type={power_type}, inverter={inverter}")
+        
+        _, _, _, merged_df = load_data()
+        if merged_df is None:
+            return jsonify({"error": "Failed to load dataset"}), 500
+        
+        data = merged_df if inverter == 'all' else merged_df[merged_df['PLANT_ID'] == inverter]
+        data = data.tail(1000)
+        result = [
+            {
+                "date_time": row['DATE_TIME'].strftime('%Y-%m-%dT%H:%M:%S'),
+                "actual": float(row[power_type]),
+                "plant_id": str(row['PLANT_ID'])
+            } for _, row in data.iterrows()
+        ]
+        logging.info("Historical data generated successfully")
+        return jsonify(result)
+    except Exception as e:
+        logging.error("Error in historical endpoint: %s", str(e), exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+@app.route('/api/forecast')
+def forecast():
+    try:
+        date_range = request.args.get('date_range', 'all')
+        power_type = request.args.get('power_type', 'AC_POWER')
+        inverter = request.args.get('inverter', 'all')
+        logging.info(f"Received forecast request: date_range={date_range}, power_type={power_type}, inverter={inverter}")
+        
+        model, scaler, target_scaler, merged_df = load_data()
+        if merged_df is None:
+            return jsonify({"error": "Failed to load dataset"}), 500
+        
+        data = merged_df if inverter == 'all' else merged_df[merged_df['PLANT_ID'] == inverter]
+        
+        forecast = predict_next_24_hours(data, model, scaler, target_scaler)
+        forecast = [
+            {
+                "date_time": item["date_time"],
+                "predicted": float(item["predicted"]),
+                "actual": item["actual"]
+            } for item in forecast
+        ]
+        
+        historical_seq = data.tail(48)
+        y_test_actual = historical_seq[power_type].tail(24).values.tolist()
+        latest_seq = prepare_sequence(historical_seq, scaler)
+        y_pred_scaled = model.predict(latest_seq, verbose=0)
+        y_pred = target_scaler.inverse_transform(y_pred_scaled).flatten().tolist()
+        
+        y_test_actual = [float(x) for x in y_test_actual]
+        y_pred = [float(x) for x in y_pred]
+        
+        logging.info(f"y_test_actual: {y_test_actual}")
+        logging.info(f"y_pred: {y_pred}")
+        logging.info(f"Mean of y_test_actual: {np.mean(y_test_actual)}")
+        logging.info(f"Variance of y_test_actual: {np.sum((np.array(y_test_actual) - np.mean(y_test_actual)) ** 2)}")
+
+        mae = float(np.mean(np.abs(np.array(y_test_actual) - np.array(y_pred))))
+        rmse = float(np.sqrt(np.mean((np.array(y_test_actual) - np.array(y_pred)) ** 2)))
+        mape = float(np.mean(np.abs((np.array(y_test_actual) - np.array(y_pred)) / np.where(np.array(y_test_actual) != 0, np.array(y_test_actual), 1))) * 100)
+        r2 = float(1 - np.sum((np.array(y_test_actual) - np.array(y_pred)) ** 2) / np.sum((np.array(y_test_actual) - np.mean(y_test_actual)) ** 2)) if np.sum((np.array(y_test_actual) - np.mean(y_test_actual)) ** 2) != 0 else 0.0
+        
+        data = {
+            "forecast": forecast,
+            "metrics": {
+                "mae": mae,
+                "rmse": rmse,
+                "mape": mape,
+                "r2": r2
+            }
+        }
+        logging.info("Forecast data generated successfully")
+        return jsonify(data)
+    except Exception as e:
+        logging.error("Error in forecast endpoint: %s", str(e), exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+@app.route('/api/solarbot', methods=['POST'])
+def solarbot():
+    try:
+        user_input = request.json.get('query', '').lower()
+        logging.info(f"SolarBot query: {user_input}")
+        if not user_input:
+            return jsonify({"response": "Please provide a query."}), 400
+        
+        tokens = word_tokenize(user_input)
+        tokens = [t for t in tokens if t not in stop_words]
+        
+        model, scaler, target_scaler, merged_df = load_data()
+        if merged_df is None:
+            return jsonify({"response": "Sorry, I couldn't load the data."}), 500
+        
+        forecast = predict_next_24_hours(merged_df, model, scaler, target_scaler)
+        latest_prediction = forecast[-1]['predicted']
+        avg_prediction = np.mean([f['predicted'] for f in forecast])
+        
+        response = "I can help with solar power forecasts! "
+        if 'power' in tokens and 'next' in tokens:
+            response += f"The predicted power for the next time step is {latest_prediction:.2f} kW."
+        elif 'average' in tokens or 'avg' in tokens:
+            response += f"The average predicted power for the next 24 hours is {avg_prediction:.2f} kW."
+        else:
+            response += "Try asking about the 'power next' or 'average power' in the forecast."
+        
+        return jsonify({"response": response})
+    except Exception as e:
+        logging.error("Error in solarbot endpoint: %s", str(e), exc_info=True)
+        return jsonify({"response": f"Sorry, I encountered an error: {str(e)}"}), 500
+
+if __name__ == "__main__":
+    app.run(debug=True)
