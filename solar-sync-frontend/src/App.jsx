@@ -15,8 +15,9 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
 
-// Register Chart.js components
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
+
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'; // Fallback for local dev
 
 const App = () => {
   const [historicalData, setHistoricalData] = useState([]);
@@ -24,49 +25,48 @@ const App = () => {
   const [weatherData, setWeatherData] = useState({});
   const [metrics, setMetrics] = useState({});
   const [error, setError] = useState(null);
-  const [powerType, setPowerType] = useState('DC_POWER'); // Default to DC_POWER to match the image
+  const [powerType, setPowerType] = useState('DC_POWER');
   const [inverter, setInverter] = useState('all');
   const [botQuery, setBotQuery] = useState('');
   const [botResponse, setBotResponse] = useState('');
 
-  // Major cities representing all Indian states/UTs (36 entries)
   const cities = [
-    { name: 'New Delhi', lat: 28.6139, lon: 77.2090 }, // Delhi
-    { name: 'Mumbai', lat: 19.0760, lon: 72.8777 }, // Maharashtra
-    { name: 'Bangalore', lat: 12.9716, lon: 77.5946 }, // Karnataka
-    { name: 'Chennai', lat: 13.0827, lon: 80.2707 }, // Tamil Nadu
-    { name: 'Kolkata', lat: 22.5726, lon: 88.3639 }, // West Bengal
-    { name: 'Hyderabad', lat: 17.3850, lon: 78.4867 }, // Telangana
-    { name: 'Ahmedabad', lat: 23.0225, lon: 72.5714 }, // Gujarat
-    { name: 'Jaipur', lat: 26.9124, lon: 75.7873 }, // Rajasthan
-    { name: 'Lucknow', lat: 26.8467, lon: 80.9462 }, // Uttar Pradesh
-    { name: 'Patna', lat: 25.5941, lon: 85.1376 }, // Bihar
-    { name: 'Bhopal', lat: 23.2599, lon: 77.4126 }, // Madhya Pradesh
-    { name: 'Thiruvananthapuram', lat: 8.5241, lon: 76.9366 }, // Kerala
-    { name: 'Dispur', lat: 26.1445, lon: 91.7362 }, // Assam
-    { name: 'Bhubaneswar', lat: 20.2961, lon: 85.8245 }, // Odisha
-    { name: 'Gandhinagar', lat: 23.2156, lon: 72.6369 }, // Gujarat
-    { name: 'Chandigarh', lat: 30.7333, lon: 76.7794 }, // Chandigarh
-    { name: 'Shimla', lat: 31.1048, lon: 77.1734 }, // Himachal Pradesh
-    { name: 'Srinagar', lat: 34.0837, lon: 74.7973 }, // Jammu & Kashmir
-    { name: 'Ranchi', lat: 23.3441, lon: 85.3096 }, // Jharkhand
-    { name: 'Raipur', lat: 21.2514, lon: 81.6296 }, // Chhattisgarh
-    { name: 'Panaji', lat: 15.4909, lon: 73.8278 }, // Goa
-    { name: 'Imphal', lat: 24.8170, lon: 93.9368 }, // Manipur
-    { name: 'Shillong', lat: 25.5788, lon: 91.8933 }, // Meghalaya
-    { name: 'Aizawl', lat: 23.7271, lon: 92.7176 }, // Mizoram
-    { name: 'Kohima', lat: 25.6747, lon: 94.1100 }, // Nagaland
-    { name: 'Agartala', lat: 23.8315, lon: 91.2868 }, // Tripura
-    { name: 'Itanagar', lat: 27.0844, lon: 93.6053 }, // Arunachal Pradesh
-    { name: 'Dehradun', lat: 30.3165, lon: 78.0322 }, // Uttarakhand
-    { name: 'Gangtok', lat: 27.3389, lon: 88.6065 }, // Sikkim
-    { name: 'Puducherry', lat: 11.9416, lon: 79.8083 }, // Puducherry
-    { name: 'Port Blair', lat: 11.6234, lon: 92.7265 }, // Andaman & Nicobar
-    { name: 'Leh', lat: 34.1526, lon: 77.5771 }, // Ladakh
-    { name: 'Daman', lat: 20.4283, lon: 72.8397 }, // Daman & Diu
-    { name: 'Silvassa', lat: 20.2763, lon: 73.0083 }, // Dadra & Nagar Haveli
-    { name: 'Kavaratti', lat: 10.5593, lon: 72.6358 }, // Lakshadweep
-    { name: 'Amaravati', lat: 16.5410, lon: 80.5150 }, // Andhra Pradesh
+    { name: 'New Delhi', lat: 28.6139, lon: 77.2090 },
+    { name: 'Mumbai', lat: 19.0760, lon: 72.8777 },
+    { name: 'Bangalore', lat: 12.9716, lon: 77.5946 },
+    { name: 'Chennai', lat: 13.0827, lon: 80.2707 },
+    { name: 'Kolkata', lat: 22.5726, lon: 88.3639 },
+    { name: 'Hyderabad', lat: 17.3850, lon: 78.4867 },
+    { name: 'Ahmedabad', lat: 23.0225, lon: 72.5714 },
+    { name: 'Jaipur', lat: 26.9124, lon: 75.7873 },
+    { name: 'Lucknow', lat: 26.8467, lon: 80.9462 },
+    { name: 'Patna', lat: 25.5941, lon: 85.1376 },
+    { name: 'Bhopal', lat: 23.2599, lon: 77.4126 },
+    { name: 'Thiruvananthapuram', lat: 8.5241, lon: 76.9366 },
+    { name: 'Dispur', lat: 26.1445, lon: 91.7362 },
+    { name: 'Bhubaneswar', lat: 20.2961, lon: 85.8245 },
+    { name: 'Gandhinagar', lat: 23.2156, lon: 72.6369 },
+    { name: 'Chandigarh', lat: 30.7333, lon: 76.7794 },
+    { name: 'Shimla', lat: 31.1048, lon: 77.1734 },
+    { name: 'Srinagar', lat: 34.0837, lon: 74.7973 },
+    { name: 'Ranchi', lat: 23.3441, lon: 85.3096 },
+    { name: 'Raipur', lat: 21.2514, lon: 81.6296 },
+    { name: 'Panaji', lat: 15.4909, lon: 73.8278 },
+    { name: 'Imphal', lat: 24.8170, lon: 93.9368 },
+    { name: 'Shillong', lat: 25.5788, lon: 91.8933 },
+    { name: 'Aizawl', lat: 23.7271, lon: 92.7176 },
+    { name: 'Kohima', lat: 25.6747, lon: 94.1100 },
+    { name: 'Agartala', lat: 23.8315, lon: 91.2868 },
+    { name: 'Itanagar', lat: 27.0844, lon: 93.6053 },
+    { name: 'Dehradun', lat: 30.3165, lon: 78.0322 },
+    { name: 'Gangtok', lat: 27.3389, lon: 88.6065 },
+    { name: 'Puducherry', lat: 11.9416, lon: 79.8083 },
+    { name: 'Port Blair', lat: 11.6234, lon: 92.7265 },
+    { name: 'Leh', lat: 34.1526, lon: 77.5771 },
+    { name: 'Daman', lat: 20.4283, lon: 72.8397 },
+    { name: 'Silvassa', lat: 20.2763, lon: 73.0083 },
+    { name: 'Kavaratti', lat: 10.5593, lon: 72.6358 },
+    { name: 'Amaravati', lat: 16.5410, lon: 80.5150 },
   ];
 
   useEffect(() => {
@@ -78,14 +78,14 @@ const App = () => {
     try {
       console.log('Fetching historical data...');
       const historicalResponse = await axios.get(
-        `http://localhost:5000/api/historical?power_type=${powerType}&inverter=${inverter}`
+        `${BASE_URL}/api/historical?power_type=${powerType}&inverter=${inverter}`
       );
       console.log('Historical Data:', historicalResponse.data);
       setHistoricalData(historicalResponse.data);
 
       console.log('Fetching forecast data...');
       const forecastResponse = await axios.get(
-        `http://localhost:5000/api/forecast?power_type=${powerType}&inverter=${inverter}`
+        `${BASE_URL}/api/forecast?power_type=${powerType}&inverter=${inverter}`
       );
       console.log('Forecast Data:', forecastResponse.data);
       setForecastData(forecastResponse.data.forecast || []);
@@ -114,7 +114,7 @@ const App = () => {
   const handleSolarBotQuery = async () => {
     try {
       console.log('Sending SolarBot query:', botQuery);
-      const response = await axios.post('http://localhost:5000/api/solarbot', { query: botQuery });
+      const response = await axios.post(`${BASE_URL}/api/solarbot`, { query: botQuery });
       console.log('SolarBot Response:', response.data);
       setBotResponse(response.data.response);
     } catch (err) {
@@ -162,62 +162,50 @@ const App = () => {
     );
   }
 
-  // Define the x-axis labels for a 24-hour period from 6 PM to 4 PM the next day
-  const timeLabels = [
-    '6PM', '7PM', '8PM', '9PM', '10PM', '11PM', '12AM',
-    '1AM', '2AM', '3AM', '4AM', '5AM', '6AM', '7AM', '8AM',
-    '9AM', '10AM', '11AM', '12PM', '1PM', '2PM', '3PM', '4PM'
-  ];
+  const timeLabels = forecastData.length > 0
+    ? forecastData.map(d => new Date(d.date_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+    : Array(96).fill('').map((_, i) => {
+        const hour = Math.floor(i / 4);
+        const minute = (i % 4) * 15;
+        return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+      });
 
-  // Power Generation Forecast based on Actual, Predicted, and Historical DC Power
   const forecastChartData = {
-    labels: timeLabels, // 24 hourly labels
+    labels: timeLabels,
     datasets: [
       {
         label: 'Actual DC Power',
         data: forecastData.map(d => d.actual || 0),
-        borderColor: 'rgba(54, 162, 235, 1)', // Blue
+        borderColor: 'rgba(54, 162, 235, 1)',
         backgroundColor: 'rgba(54, 162, 235, 0.2)',
         fill: false,
-        tension: 0.4, // Smooth lines
-        pointRadius: 4, // Small points to match the image
+        tension: 0.4,
+        pointRadius: 4,
         pointBackgroundColor: 'rgba(54, 162, 235, 1)',
       },
       {
         label: 'Predicted DC Power',
         data: forecastData.map(d => d.predicted || 0),
-        borderColor: 'rgba(255, 159, 64, 1)', // Orange
+        borderColor: 'rgba(255, 159, 64, 1)',
         backgroundColor: 'rgba(255, 159, 64, 0.2)',
         fill: false,
-        tension: 0.4, // Smooth lines
-        pointRadius: 4, // Small points
+        tension: 0.4,
+        pointRadius: 4,
         pointBackgroundColor: 'rgba(255, 159, 64, 1)',
-      },
-      {
-        label: 'Historical Data',
-        data: forecastData.map(d => d.historical || 0),
-        borderColor: 'rgba(75, 192, 192, 1)', // Green
-        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-        borderDash: [5, 5], // Dashed line
-        fill: false,
-        tension: 0.4, // Smooth lines
-        pointRadius: 4, // Small points
-        pointBackgroundColor: 'rgba(75, 192, 192, 1)',
       },
     ],
   };
 
-  // Error Trend based on Actual vs. Predicted differences
   const errorTrendData = {
-    labels: timeLabels, // 24 hourly labels
+    labels: timeLabels,
     datasets: [
       {
         label: 'Prediction Error',
         data: forecastData.map(d => d.error || 0),
-        borderColor: 'rgba(255, 99, 132, 1)', // Red
+        borderColor: 'rgba(255, 99, 132, 1)',
         backgroundColor: 'rgba(255, 99, 132, 0.2)',
         fill: false,
-        tension: 0.4, // Smooth lines
+        tension: 0.4,
         pointRadius: 4,
         pointBackgroundColor: 'rgba(255, 99, 132, 1)',
       },
@@ -230,7 +218,6 @@ const App = () => {
         SolarSync: Advanced Solar Power Forecasting
       </h1>
 
-      {/* Controls */}
       <div className="flex justify-center mb-6 space-x-4">
         <select
           value={powerType}
@@ -258,7 +245,6 @@ const App = () => {
         </button>
       </div>
 
-      {/* Power Generation Forecast */}
       <div className="bg-white shadow-2xl rounded-lg p-6 mb-6">
         <h2 className="text-2xl font-semibold mb-4 text-gray-800">Power Generation Forecast</h2>
         <div className="h-96">
@@ -269,18 +255,18 @@ const App = () => {
               maintainAspectRatio: false,
               plugins: {
                 legend: { position: 'top' },
-                title: { display: false }, // Title is already in the h2 tag
+                title: { display: false },
               },
               scales: {
                 x: {
-                  title: { display: false }, // No x-axis title
-                  ticks: { maxRotation: 45, minRotation: 45 }, // Rotate labels for readability
+                  title: { display: false },
+                  ticks: { maxRotation: 45, minRotation: 45 },
                 },
                 y: {
                   title: { display: true, text: 'Power (kW)' },
                   beginAtZero: false,
-                  min: 350,
-                  max: 700,
+                  min: 0,
+                  max: 1000,
                 },
               },
               elements: { line: { tension: 0.4 } },
@@ -289,7 +275,6 @@ const App = () => {
         </div>
       </div>
 
-      {/* Model Performance Metrics */}
       <div className="bg-white shadow-2xl rounded-lg p-6 mb-6">
         <h2 className="text-2xl font-semibold mb-4 text-gray-800">Model Performance Metrics</h2>
         {metrics && Object.keys(metrics).length > 0 ? (
@@ -304,7 +289,6 @@ const App = () => {
         )}
       </div>
 
-      {/* Error Trend */}
       <div className="bg-white shadow-2xl rounded-lg p-6 mb-6">
         <h2 className="text-2xl font-semibold mb-4 text-gray-800">Error Trend</h2>
         <div className="h-96">
@@ -330,7 +314,6 @@ const App = () => {
         </div>
       </div>
 
-      {/* Weather Map (Markers Only, Popup on Click) */}
       <div className="bg-white shadow-2xl rounded-lg p-6 mb-6">
         <h2 className="text-2xl font-semibold mb-4 text-gray-800">Weather Map (Indian States)</h2>
         <div className="h-96">
@@ -364,7 +347,6 @@ const App = () => {
         </div>
       </div>
 
-      {/* SolarBot */}
       <div className="bg-white shadow-2xl rounded-lg p-6">
         <h2 className="text-2xl font-semibold mb-4 text-gray-800">SolarBot</h2>
         <div className="flex space-x-4 mb-4">
