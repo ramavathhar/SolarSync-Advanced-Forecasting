@@ -7,13 +7,20 @@ from tensorflow.keras.models import load_model
 import joblib
 from datetime import datetime, timedelta
 import random
-
+import os
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+from dotenv import load_dotenv
+import requests
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+load_dotenv('.env.flask')
+
 app = Flask(__name__)
 CORS(app)
-
+WEATHER_API_KEY = os.getenv('WEATHER_API_KEY')
+FLASK_ENV = os.getenv('FLASK_ENV', 'development')
 # Asset serving route
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
@@ -391,5 +398,5 @@ def predict_next_24_hours(data, model, scaler, target_scaler):
         logging.error("Error in predict_next_24_hours: %s", str(e), exc_info=True)
         return []
 
-if __name__ == "__main__":
-    app.run(debug=True)
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)), debug=(FLASK_ENV == 'development'))

@@ -5,4 +5,4 @@ numpy
 tensorflow
 scikit-learn
 joblib
-gunicorn
+python-dotenv
