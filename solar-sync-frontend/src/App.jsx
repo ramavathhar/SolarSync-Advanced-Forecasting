@@ -18,7 +18,7 @@ L.Icon.Default.mergeOptions({
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 // Determine the environment (local vs production)
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const BASE_URL = import.meta.env.VITE_API_URL || 'const API_URL = 'https://your-flask-backend.onrender.com'; // replace with actual backend URL';
 console.log('Environment:', import.meta.env.MODE);
 console.log('BASE_URL:', BASE_URL);
 
