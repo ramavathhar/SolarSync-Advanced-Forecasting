@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 load_dotenv('.env.flask')
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 WEATHER_API_KEY = os.getenv('WEATHER_API_KEY')
 FLASK_ENV = os.getenv('FLASK_ENV', 'development')
 # Asset serving route

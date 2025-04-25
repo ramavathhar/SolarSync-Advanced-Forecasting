@@ -19,8 +19,12 @@ ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, T
 
 // Determine the environment (local vs production)
 const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-console.log('Environment:', import.meta.env.MODE); // Debug: Log the environment mode
-console.log('BASE_URL:', BASE_URL); // Debug: Log the API base URL
+console.log('Environment:', import.meta.env.MODE);
+console.log('BASE_URL:', BASE_URL);
+
+// Set default headers for axios to handle CORS and content type
+axios.defaults.headers.common['Content-Type'] = 'application/json';
+axios.defaults.withCredentials = false; // Disable credentials unless needed
 
 const App = () => {
   const [historicalData, setHistoricalData] = useState([]);
@@ -81,21 +85,38 @@ const App = () => {
     try {
       console.log('Fetching historical data from:', `${BASE_URL}/api/historical?power_type=${powerType}&inverter=${inverter}`);
       const historicalResponse = await axios.get(
-        `${BASE_URL}/api/historical?power_type=${powerType}&inverter=${inverter}`
+        `${BASE_URL}/api/historical?power_type=${powerType}&inverter=${inverter}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          timeout: 10000, // Add a timeout of 10 seconds to handle slow networks
+        }
       );
       console.log('Historical Data:', historicalResponse.data);
       setHistoricalData(historicalResponse.data);
 
       console.log('Fetching forecast data from:', `${BASE_URL}/api/forecast?power_type=${powerType}&inverter=${inverter}`);
       const forecastResponse = await axios.get(
-        `${BASE_URL}/api/forecast?power_type=${powerType}&inverter=${inverter}`
+        `${BASE_URL}/api/forecast?power_type=${powerType}&inverter=${inverter}`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          timeout: 10000,
+        }
       );
       console.log('Forecast Data:', forecastResponse.data);
       setForecastData(forecastResponse.data.forecast || []);
       setMetrics(forecastResponse.data.metrics || {});
     } catch (err) {
       console.error('Fetch error:', err);
-      setError(`Failed to fetch data: ${err.message}. Please check if the backend is running at ${BASE_URL}.`);
+      const errorMessage = err.response
+        ? `Failed to fetch data: ${err.response.status} ${err.response.statusText}`
+        : `Failed to fetch data: ${err.message}. Backend might be unreachable at ${BASE_URL}.`;
+      setError(errorMessage);
     }
   };
 
@@ -107,7 +128,14 @@ const App = () => {
       }
       console.log(`Fetching weather data for ${cityName} with API key: ${apiKey}`);
       const response = await axios.get(
-        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`
+        `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          timeout: 10000,
+        }
       );
       console.log(`Weather Data for ${cityName}:`, response.data);
       setWeatherData(prev => ({ ...prev, [cityName]: response.data }));
@@ -124,12 +152,25 @@ const App = () => {
         return;
       }
       console.log('Sending SolarBot query:', botQuery);
-      const response = await axios.post(`${BASE_URL}/api/solarbot`, { query: botQuery });
+      const response = await axios.post(
+        `${BASE_URL}/api/solarbot`,
+        { query: botQuery },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+          timeout: 10000,
+        }
+      );
       console.log('SolarBot Response:', response.data);
       setBotResponse(response.data.response || 'No response received from SolarBot.');
     } catch (err) {
       console.error('Error querying SolarBot:', err);
-      setBotResponse(`Error querying SolarBot: ${err.message}. Please ensure the backend is running at ${BASE_URL}.`);
+      const errorMessage = err.response
+        ? `Error querying SolarBot: ${err.response.status} ${err.response.statusText}`
+        : `Error querying SolarBot: ${err.message}. Backend might be unreachable at ${BASE_URL}.`;
+      setBotResponse(errorMessage);
     }
   };
 
