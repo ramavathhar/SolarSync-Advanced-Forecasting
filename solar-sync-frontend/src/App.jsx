@@ -17,7 +17,10 @@ L.Icon.Default.mergeOptions({
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'; // Fallback for local dev
+// Determine the environment (local vs production)
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+console.log('Environment:', import.meta.env.MODE); // Debug: Log the environment mode
+console.log('BASE_URL:', BASE_URL); // Debug: Log the API base URL
 
 const App = () => {
   const [historicalData, setHistoricalData] = useState([]);
@@ -70,20 +73,20 @@ const App = () => {
   ];
 
   useEffect(() => {
-    console.log('App component mounted and useEffect triggered');
+    console.log('App component mounted, fetching data...');
     fetchData();
   }, [powerType, inverter]);
 
   const fetchData = async () => {
     try {
-      console.log('Fetching historical data...');
+      console.log('Fetching historical data from:', `${BASE_URL}/api/historical?power_type=${powerType}&inverter=${inverter}`);
       const historicalResponse = await axios.get(
         `${BASE_URL}/api/historical?power_type=${powerType}&inverter=${inverter}`
       );
       console.log('Historical Data:', historicalResponse.data);
       setHistoricalData(historicalResponse.data);
 
-      console.log('Fetching forecast data...');
+      console.log('Fetching forecast data from:', `${BASE_URL}/api/forecast?power_type=${powerType}&inverter=${inverter}`);
       const forecastResponse = await axios.get(
         `${BASE_URL}/api/forecast?power_type=${powerType}&inverter=${inverter}`
       );
@@ -92,70 +95,81 @@ const App = () => {
       setMetrics(forecastResponse.data.metrics || {});
     } catch (err) {
       console.error('Fetch error:', err);
-      setError(`Failed to fetch data: ${err.message}`);
+      setError(`Failed to fetch data: ${err.message}. Please check if the backend is running at ${BASE_URL}.`);
     }
   };
 
   const fetchWeatherData = async (lat, lon, cityName) => {
     try {
-      const apiKey = 'bd47081533c66550286112892cea28c4';
-      console.log(`Fetching weather data for ${cityName}...`);
+      const apiKey = import.meta.env.VITE_WEATHER_API_KEY || 'bd47081533c66550286112892cea28c4';
+      if (!apiKey) {
+        throw new Error('Weather API key is missing. Set VITE_WEATHER_API_KEY in your environment variables.');
+      }
+      console.log(`Fetching weather data for ${cityName} with API key: ${apiKey}`);
       const response = await axios.get(
         `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`
       );
       console.log(`Weather Data for ${cityName}:`, response.data);
       setWeatherData(prev => ({ ...prev, [cityName]: response.data }));
     } catch (err) {
-      console.error(`Error fetching weather data for ${cityName}:`, err);
+      console.error(`Error fetching weather data for ${cityName}:`, err.message);
       setWeatherData(prev => ({ ...prev, [cityName]: null }));
     }
   };
 
   const handleSolarBotQuery = async () => {
     try {
+      if (!botQuery.trim()) {
+        setBotResponse('Please enter a query for SolarBot.');
+        return;
+      }
       console.log('Sending SolarBot query:', botQuery);
       const response = await axios.post(`${BASE_URL}/api/solarbot`, { query: botQuery });
       console.log('SolarBot Response:', response.data);
-      setBotResponse(response.data.response);
+      setBotResponse(response.data.response || 'No response received from SolarBot.');
     } catch (err) {
       console.error('Error querying SolarBot:', err);
-      setBotResponse('Sorry, I encountered an error. Please try again.');
+      setBotResponse(`Error querying SolarBot: ${err.message}. Please ensure the backend is running at ${BASE_URL}.`);
     }
   };
 
   const downloadData = () => {
-    const combinedData = [
-      ...historicalData.map(d => ({ ...d, type: 'historical' })),
-      ...forecastData.map(d => ({ ...d, type: 'forecast' }))
-    ];
-    const csvContent = [
-      ['Type', 'Date Time', 'Actual', 'Predicted', 'Historical', 'Plant ID'],
-      ...combinedData.map(row => [
-        row.type,
-        row.date_time,
-        row.actual || '',
-        row.predicted || '',
-        row.historical || '',
-        row.plant_id || ''
-      ])
-    ]
-      .map(e => e.join(','))
-      .join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'solar_data.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const combinedData = [
+        ...historicalData.map(d => ({ ...d, type: 'historical' })),
+        ...forecastData.map(d => ({ ...d, type: 'forecast' }))
+      ];
+      const csvContent = [
+        ['Type', 'Date Time', 'Actual', 'Predicted', 'Plant ID'],
+        ...combinedData.map(row => [
+          row.type,
+          row.date_time,
+          row.actual || '',
+          row.predicted || '',
+          row.plant_id || ''
+        ])
+      ]
+        .map(e => e.join(','))
+        .join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', 'solar_data.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('Error downloading data:', err);
+      alert('Failed to download data. Please try again.');
+    }
   };
 
   if (error) {
     return (
       <div className="text-center text-red-500 p-6">
-        Error: {error}
-        <button onClick={() => window.location.reload()} className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
+        <p>Error: {error}</p>
+        <button onClick={() => { setError(null); fetchData(); }} className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">
           Retry
         </button>
       </div>
